@@ -8,7 +8,7 @@
 #include "goodbyedpi.h"
 
 static const unsigned char fake_http_request[] = "GET / HTTP/1.1\r\nHost: www.w3.org\r\n"
-                                                 "User-Agent: curl/7.65.3\r\nAccept: */*\r\n"
+                                                 "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:103.0) Gecko/20100101 Firefox/103.0\r\nAccept: */*\r\n"
                                                  "Accept-Encoding: deflate, gzip, br\r\n\r\n";
 static const unsigned char fake_https_request[] = {
     0x16, 0x03, 0x01, 0x02, 0x00, 0x01, 0x00, 0x01, 0xfc, 0x03, 0x03, 0x9a, 0x8f, 0xa7, 0x6a, 0x5d,
@@ -128,8 +128,9 @@ static int send_fake_data(const HANDLE w_filter,
         // ...and damage it
         ppTcpHdr->Checksum = htons(ntohs(ppTcpHdr->Checksum) - 1);
     }
-    //printf("Pseudo checksum: %d\n", addr_new.TCPChecksum);
-
+#if DEBUG
+    printf("Pseudo checksum: %d\n", addr_new.TCPChecksum);
+#endif
     WinDivertSend(
         w_filter, packet_fake,
         packetLen_new,
