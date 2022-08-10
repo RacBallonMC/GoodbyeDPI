@@ -43,20 +43,39 @@ typedef struct udp_connrecord {
 static time_t last_cleanup = 0;
 static udp_connrecord_t *conntrack = NULL;
 
+// Custom by RacBallonMC (Aoca)
 void flush_dns_cache() {
     INT_PTR WINAPI (*DnsFlushResolverCache)();
+    int foundHandle = 0;
+    HMODULE dnsapi = GetModuleHandle("dnsapi.dll");
 
-    HMODULE dnsapi = LoadLibrary("dnsapi.dll");
+    if (dnsapi != NULL) 
+    {
+        foundHandle = 1;
+    }
+    else 
+    {
+        dnsapi = LoadLibrary("dnsapi.dll");
+    }
     if (dnsapi == NULL)
     {
-        printf("Can't load dnsapi.dll to flush DNS cache!\n");
-        exit(EXIT_FAILURE);
+        printf("flush_dns_cache: Can't load dnsapi.dll to flush DNS cache!\n");
+        return;
     }
 
     DnsFlushResolverCache = GetProcAddress(dnsapi, "DnsFlushResolverCache");
-    if (DnsFlushResolverCache == NULL || !DnsFlushResolverCache())
-        printf("Can't flush DNS cache!");
-    FreeLibrary(dnsapi);
+    if (DnsFlushResolverCache == NULL) 
+    {
+        printf("flush_dns_cache: dnsapi.dll does not exist DnsFlushResolverCache()\n");
+    }
+    else if (!DnsFlushResolverCache()) 
+    {
+        printf("flush_dns_cache: Can't flush DNS cache!");
+    }
+    if (!foundHandle) 
+    {
+        FreeLibrary(dnsapi);
+    }
 }
 
 inline static void fill_key_data(char *key, const uint8_t is_ipv6, const uint32_t srcip[4],
