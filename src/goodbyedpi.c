@@ -139,7 +139,7 @@ static int filter_num = 0;
 static const char http10_redirect_302[] = "HTTP/1.0 302 ";
 static const char http11_redirect_302[] = "HTTP/1.1 302 ";
 static const char http_host_find[] = "\r\nHost: ";
-static const char http_host_replace[] = "\r\nhoSt: ";
+static const char http_host_replace[] = "\r\nHOSt: ";
 static const char http_useragent_find[] = "\r\nUser-Agent: ";
 static const char location_http[] = "\r\nLocation: http://";
 static const char connection_close[] = "\r\nConnection: close";
@@ -171,6 +171,7 @@ static struct option long_options[] = {
     {"native-frag", no_argument,       0,  '*' },
     {"reverse-frag",no_argument,       0,  '(' },
     {"max-payload", optional_argument, 0,  '|' },
+    {"openvpn",     no_argument,       0,  '#' },
     {0,             0,                 0,   0  }
 };
 
@@ -295,7 +296,7 @@ static HANDLE init(char *filter, UINT64 flags) {
                   (LPTSTR)&errormessage, 0, NULL);
     printf("Error opening filter: %s", errormessage);
     LocalFree(errormessage);
-    if (errorcode == 577)
+    if (errorcode == 577) {
         printf("Windows Server 2016 systems must have secure boot disabled to be "
                "able to load WinDivert driver.\n"
                "Windows 7 systems must be up-to-date or at least have KB3033929 installed.\n"
@@ -305,6 +306,7 @@ static HANDLE init(char *filter, UINT64 flags) {
                "Most probably, you don't have security patches installed and anyone in you LAN or "
                "public Wi-Fi network can get full access to your computer (MS17-010 and others).\n"
                "You should install updates IMMEDIATELY.\n");
+    }
     return NULL;
 }
 
@@ -323,7 +325,12 @@ void deinit_all() {
     }
 }
 
-static void sigint_handler(int sig __attribute__((unused))) {
+static void sigint_handler(int sig) {
+    if (sig == 11) {
+		signal(SIGINT, sigint_handler);
+		printf("App crashed!");
+		while(1) { sleep(20); }
+    }
     exiting = 1;
     deinit_all();
     exit(EXIT_SUCCESS);
@@ -412,18 +419,10 @@ static int extract_sni(const char *pktdata, unsigned int pktlen,
                 hnaddr = &d[ptr+9];
                 hnlen = d[ptr+8];
                 /* Limit hostname size up to 253 bytes */
-                if (hnlen < 3 || hnlen > HOST_MAXLEN) {
+                if (hnlen < 0 || hnlen > HOST_MAXLEN) {
                     return FALSE;
                 }
-                /* Validate that hostname has only ascii lowercase characters */
-                for (int i=0; i<hnlen; i++) {
-                    if (!( (hnaddr[i] >= '0' && hnaddr[i] <= '9') ||
-                         (hnaddr[i] >= 'a' && hnaddr[i] <= 'z') ||
-                         hnaddr[i] == '.' || hnaddr[i] == '-'))
-                    {
-                        return FALSE;
-                    }
-                }
+				
                 *hostnameaddr = (char*)hnaddr;
                 *hostnamelen = (unsigned int)hnlen;
                 return TRUE;
@@ -431,6 +430,16 @@ static int extract_sni(const char *pktdata, unsigned int pktlen,
         ptr++;
     }
     return FALSE;
+}
+
+static inline int is_openvpn_handshake(const char *pktdata, unsigned int pktlen) {
+    /*
+     * 0x38 is P_CONTROL_HARD_RESET_CLIENT_V2 + peer_id(0),
+     * 0x50 is P_CONTROL_HARD_RESET_CLIENT_V3 + peer_id(0)
+     */
+    return pktlen >= 16
+           && ntohs(((uint16_t*)pktdata)[0]) == pktlen - 2
+           && (pktdata[2] == '\x38' || pktdata[2] == '\x50');
 }
 
 static inline void change_window_size(const PWINDIVERT_TCPHDR ppTcpHdr, unsigned int size) {
@@ -543,8 +552,10 @@ int main(int argc, char *argv[]) {
     } packet_type;
     int i, should_reinject, should_recalc_checksum = 0;
     int sni_ok = 0;
+    int openvpn_handshake = 0;
     int opt;
     int packet_v4, packet_v6;
+    int rerror = 0;
     HANDLE w_filter = NULL;
     WINDIVERT_ADDRESS addr;
     char packet[MAX_PACKET_SIZE];
@@ -569,6 +580,7 @@ int main(int argc, char *argv[]) {
         do_dns_verb = 0, do_tcp_verb = 0, do_blacklist = 0,
         do_allow_no_sni = 0,
         do_fake_packet = 0,
+        do_openvpn = 0,
         do_auto_ttl = 0,
         do_wrong_chksum = 0,
         do_wrong_seq = 0,
@@ -623,9 +635,10 @@ int main(int argc, char *argv[]) {
         filter_passive_string = strdup(FILTER_PASSIVE_STRING_TEMPLATE);
 
     printf(
-        "GoodbyeDPI " GOODBYEDPI_VERSION
+        "GoodbyeDPI" GOODBYEDPI_VERSION
         ": Passive DPI blocker and Active DPI circumvention utility\n"
-        "https://github.com/ValdikSS/GoodbyeDPI\n\n"
+        "https://github.com/ValdikSS/GoodbyeDPI\n"
+		"Patched by https://github.com/RacBallonMC/GoodbyeDPI\n\n"
     );
 
     if (argc == 1) {
@@ -849,6 +862,9 @@ int main(int argc, char *argv[]) {
                     free(autottl_copy);
                 }
                 break;
+            case '#': // --openvpn
+                do_openvpn = 1;
+                break;
             case '%': // --wrong-chksum
                 do_fake_packet = 1;
                 do_wrong_chksum = 1;
@@ -879,7 +895,7 @@ int main(int argc, char *argv[]) {
             default:
                 puts("Usage: goodbyedpi.exe [OPTION...]\n"
                 " -p          block passive DPI\n"
-                " -r          replace Host with hoSt\n"
+                " -r          replace Host with HOSt\n"
                 " -s          remove space between host header and its value\n"
                 " -a          additional space between Method and Request-URI (enables -s, may break sites)\n"
                 " -m          mix Host header case (test.com -> tEsT.cOm)\n"
@@ -924,6 +940,7 @@ int main(int argc, char *argv[]) {
                 "                          (like file transfers) in already established sessions.\n"
                 "                          May skip some huge HTTP requests from being processed.\n"
                 "                          Default (if set): --max-payload 1200.\n"
+                " --openvpn                Detect OpenVPN TCP and fragment/send fake packet.\n"
                 "\n");
                 puts("LEGACY modesets:\n"
                 " -1          -p -r -s -f 2 -k 2 -n -e 2 (most compatible mode)\n"
@@ -959,7 +976,7 @@ int main(int argc, char *argv[]) {
            "Fragment HTTPS: %u\n"                   /* 4 */
            "Native fragmentation (splitting): %d\n" /* 5 */
            "Fragments sending in reverse: %d\n"     /* 6 */
-           "hoSt: %d\n"                             /* 7 */
+           "HOSt: %d\n"                             /* 7 */
            "Host no space: %d\n"                    /* 8 */
            "Additional space: %d\n"                 /* 9 */
            "Mix Host: %d\n"                         /* 10 */
@@ -971,7 +988,8 @@ int main(int argc, char *argv[]) {
            "Fake requests, TTL: %s (fixed: %hu, auto: %hu-%hu-%hu, min distance: %hu)\n"  /* 16 */
            "Fake requests, wrong checksum: %d\n"    /* 17 */
            "Fake requests, wrong SEQ/ACK: %d\n"     /* 18 */
-           "Max payload size: %hu\n",               /* 19 */
+           "Max payload size: %hu\n"                /* 19 */
+           "OpenVPN: %d\n",                         /* 20 */
            do_passivedpi,                                         /* 1 */
            (do_fragment_http ? http_fragment_size : 0),           /* 2 */
            (do_fragment_http_persistent ? http_fragment_size : 0),/* 3 */
@@ -992,7 +1010,8 @@ int main(int argc, char *argv[]) {
                do_auto_ttl ? auto_ttl_max : 0, ttl_min_nhops,
            do_wrong_chksum, /* 17 */
            do_wrong_seq,    /* 18 */
-           max_payload_size /* 19 */
+           max_payload_size, /* 19 */
+           do_openvpn        /* 20 */
           );
 
     if (do_fragment_http && http_fragment_size > 2 && !do_native_frag) {
@@ -1039,11 +1058,13 @@ int main(int argc, char *argv[]) {
 
     printf("Filter activated, GoodbyeDPI is now running!\n");
     signal(SIGINT, sigint_handler);
-
+    signal(11, sigint_handler);
+	
     while (1) {
         if (WinDivertRecv(w_filter, packet, sizeof(packet), &packetLen, &addr)) {
             debug("Got %s packet, len=%d!\n", addr.Outbound ? "outbound" : "inbound",
                    packetLen);
+            rerror = 0;
             should_reinject = 1;
             should_recalc_checksum = 0;
 
@@ -1119,7 +1140,7 @@ int main(int argc, char *argv[]) {
                  */
                 else if (addr.Outbound &&
                         ((do_fragment_https ? packet_dataLen == https_fragment_size : 0) ||
-                         packet_dataLen > 16) &&
+                         packet_dataLen >= 16) &&
                          ppTcpHdr->DstPort != htons(80) &&
                          (do_fake_packet || do_native_frag)
                         )
@@ -1129,7 +1150,9 @@ int main(int argc, char *argv[]) {
                      * But if the packet is more than 2 bytes, check ClientHello byte.
                     */
                     if ((packet_dataLen == 2 && memcmp(packet_data, "\x16\x03", 2) == 0) ||
-                        (packet_dataLen >= 3 && memcmp(packet_data, "\x16\x03\x01", 3) == 0))
+                        (packet_dataLen >= 3 && memcmp(packet_data, "\x16\x03\x01", 3) == 0) ||
+                        (do_openvpn && (openvpn_handshake = is_openvpn_handshake(packet_data, packet_dataLen)))
+                       )
                     {
                         if (do_blacklist) {
                             sni_ok = extract_sni(packet_data, packet_dataLen,
@@ -1140,6 +1163,7 @@ int main(int argc, char *argv[]) {
                               blackwhitelist_check_hostname(host_addr, host_len)
                              ) ||
                              (do_blacklist && !sni_ok && do_allow_no_sni) ||
+                             (do_openvpn && openvpn_handshake) ||
                              (!do_blacklist)
                            )
                         {
@@ -1201,7 +1225,7 @@ int main(int argc, char *argv[]) {
                         }
 
                         if (do_host) {
-                            /* Replace "Host: " with "hoSt: " */
+                            /* Replace "Host: " with "HOSt: " */
                             memcpy(hdr_name_addr, http_host_replace, strlen(http_host_replace));
                             should_recalc_checksum = 1;
                             //printf("Replaced Host header!\n");
@@ -1418,9 +1442,23 @@ int main(int argc, char *argv[]) {
         }
         else {
             // error, ignore
-            if (!exiting)
+            if (!exiting) {
                 printf("Error receiving packet!\n");
-            break;
+				sleep(10000);
+				rerror++;
+				if (rerror >= 10) {
+					printf("Too mush error\nExiting...");
+                    exiting = 1;
+                    deinit_all();
+					exit(EXIT_FAILURE);
+					break;
+				}
+				continue;
+			}
+			else {
+                printf("Exiting...");
+				break;
+			}
         }
     }
 }

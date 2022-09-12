@@ -13,15 +13,15 @@ LIBS = -L$(WINDIVERTLIBS) -lWinDivert -lws2_32 -l:libssp.a
 CC = $(CPREFIX)gcc
 CCWINDRES = $(CPREFIX)windres
 CFLAGS = -std=c99 -pie -fPIE -pipe -I$(WINDIVERTHEADERS) -L$(WINDIVERTLIBS) \
-         -O2 -D_FORTIFY_SOURCE=2 -fstack-protector \
+         -O3 -D_FORTIFY_SOURCE=2 -fstack-protector \
          -Wall -Wextra -Wpedantic -Wformat=2 -Wformat-overflow=2 -Wformat-truncation=2 \
          -Wformat-security -Wno-format-nonliteral -Wshadow -Wstrict-aliasing=1 \
          -Wnull-dereference -Warray-bounds=2 -Wimplicit-fallthrough=3 \
          -Wstringop-overflow=4 \
          -Wformat-signedness -Wstrict-overflow=2 -Wcast-align=strict \
-         -Wfloat-equal -Wcast-align -Wsign-conversion \
+         -Wfloat-equal -Wcast-align -Wsign-conversion -Wno-stringop-overflow -Wno-stringop-overread \
          #-fstack-protector-strong
-LDFLAGS = -fstack-protector -Wl,-O1,-pie,--dynamicbase,--nxcompat,--sort-common,--as-needed \
+LDFLAGS = -fstack-protector -Wl,-O2,-pie,--dynamicbase,--nxcompat,--sort-common,--as-needed \
 -Wl,--image-base,0x140000000 -Wl,--disable-auto-image-base
 
 ifdef BIT64
