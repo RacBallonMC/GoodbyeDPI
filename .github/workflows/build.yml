@@ -6,10 +6,10 @@ on:
       - 'src/**'
 
 env:
-  WINDIVERT_URL: https://www.reqrypt.org/download/WinDivert-2.2.0-A.zip
-  WINDIVERT_NAME: WinDivert-2.2.0-A.zip
-  WINDIVERT_BASENAME: WinDivert-2.2.0-A
-  WINDIVERT_SHA256: 2a7630aac0914746fbc565ac862fa096e3e54233883ac52d17c83107496b7a7f
+  WINDIVERT_URL: https://www.reqrypt.org/download/WinDivert-2.2.1-A.zip
+  WINDIVERT_NAME: WinDivert-2.2.1-A.zip
+  WINDIVERT_BASENAME: WinDivert-2.2.1-A
+  WINDIVERT_SHA256: cf78031e9de3948e65a7d1ef197dbc3c9d4d67c5ac6a220f3b8a1c540b5e5dfd
 
 jobs:
   build:
