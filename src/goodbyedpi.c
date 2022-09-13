@@ -1153,12 +1153,8 @@ int main(int argc, char *argv[]) {
                         (do_openvpn && (openvpn_handshake = is_openvpn_handshake(packet_data, packet_dataLen)))
                        )
                     {
-                        //if (do_blacklist) {
-                            sni_ok = extract_sni(packet_data, packet_dataLen,
+                        sni_ok = extract_sni(packet_data, packet_dataLen,
                                         &host_addr, &host_len);
-                        //}
-						printf("---------");
-						printf("DEBUG: SNI Valid: %d\n", sni_ok);
 						if (!do_blacklist) {
 							sni_ok = 0;
 						}
@@ -1187,16 +1183,11 @@ int main(int argc, char *argv[]) {
                                 // Signal for native fragmentation code handler
                                 should_recalc_checksum = 1;
                             }
+#ifdef DEBUG
 							if (host_len > 0 && !do_blacklist) {
 								printf("DEBUG: HTTPS website SNI: %s\n", lsni);
 							}
-							if (do_fake_packet) {
-							    printf("do_fake_packet");
-							}
-							if (do_native_frag) {
-							    printf("do_native_frag");
-							}
-							printf("---------");
+#endif
                         }
                     }
                 }
